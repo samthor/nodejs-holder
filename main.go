@@ -1,96 +1,37 @@
 package main
 
 import (
-	"bufio"
-	"encoding/json"
-	"io"
+	"context"
 	"log"
-	"os"
-	"os/exec"
+	"time"
+
+	njs "github.com/samthor/nodejs-holder/lib"
 )
 
 func main() {
-
-	err := hostNode()
+	runner, err := njs.New(context.Background(), &njs.Options{
+		Flags: njs.OptionsFlags{
+			DisableExperimentalWarning: true,
+			TransformTypes:             true,
+		},
+		Log: func(msg string, stderr bool) {
+			log.Printf("! (stderr=%v) %s", stderr, msg)
+		},
+	})
 	if err != nil {
-		log.Fatalf("couldn't host node: %v", err)
+		log.Fatalf("can't start runner: %v", err)
 	}
+	log.Printf("runner started: %+v", runner)
 
-	log.Printf("done OK")
-
-}
-
-type Request struct {
-	Import string `json:"import"`
-	Method string `json:"method,omitempty"`
-	Id     string `json:"id"`
-	Args   []any  `json:"args,omitempty"`
-}
-
-func hostNode() error {
-	c := exec.Command("node",
-		"-e",
-		jsHarness,
-	)
-	defer func() {
-		if c.Process != nil {
-			c.Process.Kill()
-		}
-	}()
-
-	nodeOut, err := c.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	nodeErr, err := c.StderrPipe()
-	if err != nil {
-		return err
-	}
-
-	c.Env = os.Environ()
-	c.Env = append(c.Env, "NODE_OPTIONS=--disable-warning=ExperimentalWarning --experimental-transform-types")
-
-	// os.Pipe seems to create R/W pipes in that order (undocumented!)
-	remoteRead, localWrite, err := os.Pipe()
-	if err != nil {
-		return err
-	}
-	defer remoteRead.Close()
-	defer localWrite.Close()
-
-	localRead, remoteWrite, err := os.Pipe()
-	if err != nil {
-		return err
-	}
-	defer localRead.Close()
-	defer remoteWrite.Close()
-
-	c.ExtraFiles = []*os.File{remoteRead, remoteWrite}
-
-	err = c.Start()
-	if err != nil {
-		return err
-	}
-
-	doLog := func(r io.Reader) {
-		scan := bufio.NewScanner(r)
-		for scan.Scan() {
-			line := scan.Text()
-			log.Printf("got line from proc: %s", line)
-		}
-	}
-	go doLog(nodeErr)
-	go doLog(nodeOut)
-
-	go doLog(localRead)
-
-	r := &Request{
+	tc, _ := context.WithTimeout(context.Background(), time.Second*1)
+	out, err := runner.Do(tc, njs.Request[any]{
 		Import: "./other.ts",
-		Id:     "123",
+	})
+	if err != nil {
+		log.Printf("can't get answer: %v", err)
 	}
-	enc, _ := json.Marshal(r)
-	localWrite.Write(enc)
-	localWrite.Write([]byte("\n"))
 
-	return c.Wait()
+	time.Sleep(time.Second * 10)
+
+	log.Printf("got out: %+v", out)
 }

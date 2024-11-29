@@ -1,40 +1,87 @@
 import { buildWriter, FdReader } from './fd.ts';
 
 export type Request = {
+  id: string;
   import: string;
   method?: string; // or 'default'
-  id: string | number;
+  cancel?: true;
   args?: any[];
 };
+
+export type Response = {
+  id: string;
+  status: string;
+  res?: any;
+  errtext?: string;
+};
+
+process.title = 'nodejs-holder';
+
+const abortSignalSymbol = Symbol.for('nodejs-holder.signal');
 
 const r = new FdReader(3);
 const w = buildWriter(4);
 const write = (payload: any) => w(JSON.stringify(payload), '\n');
 
-const active = new Set<number | string>();
+const active = new Map<string, () => void>();
 
 for (;;) {
-  const line = await r.line();
-  const raw = JSON.parse(line.toString('utf-8'));
+  const bytes = await r.line();
+  const line = bytes.toString('utf-8');
+  if (!line) {
+    continue; // should never happen but check anyway
+  }
+  const raw = JSON.parse(line);
 
   const payload = raw as Request;
+  if (payload.cancel) {
+    if (!payload.id) {
+      // aggressive shutdown
+      process.exit(0);
+    }
+
+    const h = active.get(payload.id);
+    h?.(); // ignore if missing, maybe racey
+    continue;
+  }
+
   if (active.has(payload.id)) {
     throw new Error('req already active: ' + payload.id);
   }
-  active.add(payload.id);
 
-  (async () => {
-    try {
-      const module = await import(payload.import);
-      const method = module[payload.method ?? 'default'];
-      const res = await method(...(payload.args ?? []));
-      await write({ status: 'ok', id: payload.id, res });
-    } catch (e) {
-      console.warn(e);
-      // TODO: stringify error
-      await write({ status: 'err', id: payload.id });
-    } finally {
-      active.delete(payload.id);
-    }
-  })();
+  const c = new AbortController();
+  active.set(payload.id, () => c.abort());
+
+  // async error ignored
+  runRequest(payload, c.signal).finally(() => active.delete(payload.id));
+}
+
+async function runRequest(payload: Request, signal: AbortSignal) {
+  try {
+    const module = await import(payload.import);
+    const method = module[payload.method ?? 'default'];
+
+    method[abortSignalSymbol] = signal;
+    Promise.resolve().then(() => {
+      if (method[abortSignalSymbol] === signal) {
+        delete method[abortSignalSymbol];
+      }
+    });
+
+    const res = await method(...(payload.args ?? []));
+    const r: Response = {
+      id: payload.id,
+      status: 'ok',
+      res,
+    };
+    await write(r);
+  } catch (e) {
+    // stringify err and send response
+    const r: Response = {
+      id: payload.id,
+      status: 'err',
+      errtext: String(e),
+    };
+    await write(r);
+  }
 }

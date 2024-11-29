@@ -1,7 +1,7 @@
-package main
+package lib
 
 const (
-	jsHarness = `
+  jsHarness = `
 // harness/fd.ts
 import * as fs from "node:fs";
 var MIN_BUFFER = 1024;
@@ -76,31 +76,61 @@ function buildWriter(fd) {
 }
 
 // harness/main.ts
+process.title = "nodejs-holder";
+var abortSignalSymbol = Symbol.for("nodejs-holder.signal");
 var r = new FdReader(3);
 var w = buildWriter(4);
 var write2 = (payload) => w(JSON.stringify(payload), "\n");
-var active = /* @__PURE__ */ new Set();
+var active = /* @__PURE__ */ new Map();
 for (; ; ) {
-  const line = await r.line();
-  const raw = JSON.parse(line.toString("utf-8"));
+  const bytes = await r.line();
+  const line = bytes.toString("utf-8");
+  if (!line) {
+    continue;
+  }
+  const raw = JSON.parse(line);
   const payload = raw;
+  if (payload.cancel) {
+    if (!payload.id) {
+      process.exit(0);
+    }
+    const h = active.get(payload.id);
+    h?.();
+    continue;
+  }
   if (active.has(payload.id)) {
     throw new Error("req already active: " + payload.id);
   }
-  active.add(payload.id);
-  (async () => {
-    try {
-      const module = await import(payload.import);
-      const method = module[payload.method ?? "default"];
-      const res = await method(...payload.args ?? []);
-      await write2({ status: "ok", res });
-    } catch (e) {
-      console.warn(e);
-      await write2({ status: "err" });
-    } finally {
-      active.delete(payload.id);
-    }
-  })();
+  const c = new AbortController();
+  active.set(payload.id, () => c.abort());
+  runRequest(payload, c.signal).finally(() => active.delete(payload.id));
 }
-	`
+async function runRequest(payload, signal) {
+  try {
+    const module = await import(payload.import);
+    const method = module[payload.method ?? "default"];
+    method[abortSignalSymbol] = signal;
+    Promise.resolve().then(() => {
+      if (method[abortSignalSymbol] === signal) {
+        delete method[abortSignalSymbol];
+      }
+    });
+    const res = await method(...payload.args ?? []);
+    const r2 = {
+      id: payload.id,
+      status: "ok",
+      res
+    };
+    await write2(r2);
+  } catch (e) {
+    const r2 = {
+      id: payload.id,
+      status: "err",
+      errtext: String(e)
+    };
+    await write2(r2);
+  }
+}
+  `
 )
+
