@@ -77,7 +77,6 @@ function buildWriter(fd) {
 
 // harness/main.ts
 process.title = "nodejs-holder";
-var abortSignalSymbol = Symbol.for("nodejs-holder.signal");
 var r = new FdReader(3);
 var w = buildWriter(4);
 var write2 = (payload) => w(JSON.stringify(payload), "\n");
@@ -109,13 +108,7 @@ async function runRequest(payload, signal) {
   try {
     const module = await import(payload.import);
     const method = module[payload.method ?? "default"];
-    method[abortSignalSymbol] = signal;
-    Promise.resolve().then(() => {
-      if (method[abortSignalSymbol] === signal) {
-        delete method[abortSignalSymbol];
-      }
-    });
-    const res = await method(...payload.args ?? []);
+    const res = await method(payload.arg, signal);
     const r2 = {
       id: payload.id,
       status: "ok",

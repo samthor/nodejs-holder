@@ -9,12 +9,13 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"reflect"
 	"strconv"
 	"sync"
 )
 
-type internalRequest[X any] struct {
-	Request[X]
+type internalRequest struct {
+	Request
 	Cancel bool   `json:"cancel,omitempty"`
 	Id     string `json:"id"`
 }
@@ -156,7 +157,7 @@ func (nh *nodeHost) Stop() error {
 	nh.lock.Lock()
 	defer nh.lock.Unlock()
 
-	return writeJsonLine(nh.localWrite, internalRequest[any]{
+	return writeJsonLine(nh.localWrite, internalRequest{
 		Id:     "", // with blank ID, shuts process
 		Cancel: true,
 	})
@@ -197,21 +198,21 @@ func writeJsonLine(w io.Writer, arg any) error {
 	return err
 }
 
-func (n *nodeHost) Do(ctx context.Context, req Request[any]) (any, error) {
+func (n *nodeHost) Do(ctx context.Context, req Request) error {
 	n.lock.Lock()
 	n.seq++
 
 	seq := n.seq
 	id := strconv.Itoa(seq)
 
-	err := writeJsonLine(n.localWrite, internalRequest[any]{
+	err := writeJsonLine(n.localWrite, internalRequest{
 		Request: req,
 		Id:      id,
 	})
 	if err != nil {
 		// probably host stopped
 		n.lock.Unlock()
-		return nil, err
+		return err
 	}
 
 	ch := make(chan internalResponse[any], 1)
@@ -227,27 +228,43 @@ func (n *nodeHost) Do(ctx context.Context, req Request[any]) (any, error) {
 	select {
 	case out := <-ch:
 		if out.Status == "ok" {
-			return out.Response, nil
+			if !isTypeNil(req.Response) {
+				// TODO: lazy (we know this will work since it was JSON already)
+				b, _ := json.Marshal(out.Response)
+				return json.Unmarshal(b, req.Response)
+			}
+			return nil
 		}
-		return nil, fmt.Errorf("from Node.js %s:\n%s", out.Status, out.ErrorText)
+		return fmt.Errorf("from Node.js %s:\n%s", out.Status, out.ErrorText)
 
 	case <-ctx.Done():
-		err := writeJsonLine(n.localWrite, internalRequest[any]{
+		err := writeJsonLine(n.localWrite, internalRequest{
 			Id:     id,
 			Cancel: true,
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
 		// we don't wait for the real reply
-		return nil, ctx.Err()
+		return ctx.Err()
 
 	case <-n.outerContext.Done():
-		return nil, n.outerContext.Err()
+		return n.outerContext.Err()
 	}
 }
 
 func (nh *nodeHost) Wait() error {
 	_, err := nh.proc.Wait()
 	return err
+}
+
+func isTypeNil(i interface{}) bool {
+	if i == nil {
+		return true
+	}
+	switch reflect.TypeOf(i).Kind() {
+	case reflect.Ptr, reflect.Map, reflect.Array, reflect.Chan, reflect.Slice:
+		return reflect.ValueOf(i).IsNil()
+	}
+	return false
 }

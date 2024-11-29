@@ -1,9 +1,6 @@
-const abortSignalSymbol = Symbol.for('nodejs-holder.signal');
-
 // demo file
-export default async function defaultFunc() {
-  const signal = defaultFunc[abortSignalSymbol] as AbortSignal;
-  console.info('we have signal', signal);
+export default async function defaultFunc(arg: any, signal: AbortSignal) {
+  console.info('we have', { arg, signal });
 
   if (signal) {
     signal.addEventListener('abort', () => {

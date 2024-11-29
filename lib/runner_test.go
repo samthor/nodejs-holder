@@ -10,7 +10,6 @@ import (
 )
 
 func TestRunner(t *testing.T) {
-
 	ctx := context.Background()
 
 	runner, err := lib.New(ctx, nil)
@@ -19,20 +18,47 @@ func TestRunner(t *testing.T) {
 	}
 
 	sourceNumber := rand.Int31() & 0xfff
+	var out int32
 
-	out, err := runner.Do(ctx, lib.Request[any]{
-		Import: "./fortest.js",
-		Method: "whatever",
-		Args:   []any{sourceNumber, "hello", true},
+	err = runner.Do(ctx, lib.Request{
+		Import:   "./fortest.js",
+		Method:   "whatever",
+		Arg:      sourceNumber,
+		Response: &out,
 	})
 	if err != nil {
 		t.Fatalf("couldn't run whatever method: %v", err)
 	}
 
-	// TODO: javascript! (shakes fist)
-	f64, ok := out.(float64)
-	i := int32(f64)
-	if !ok || i != sourceNumber+1 {
+	if out != sourceNumber+1 {
 		t.Fatalf("unexpected test answer=%v (type=%v), expected=%v", out, reflect.TypeOf(out), sourceNumber+1)
+	}
+}
+
+func TestWrap(t *testing.T) {
+	ctx := context.Background()
+
+	runner, err := lib.New(ctx, nil)
+	if err != nil {
+		t.Fatalf("couldn't start runner: %v", err)
+	}
+
+	wrap := lib.WrapHost[int32, int32](runner, lib.RequestMethod{
+		Import: "./fortest.js",
+		Method: "whatever",
+	})
+
+	var out int32
+	err = wrap(ctx, 1, &out)
+	if err != nil {
+		t.Fatalf("could not do op: %v", err)
+	}
+	if out != 2 {
+		t.Fatalf("unexpected answer for wrap, was: %+v", out)
+	}
+
+	err = wrap(ctx, 1234, nil)
+	if err != nil {
+		t.Fatalf("could not do nil response op: %v", err)
 	}
 }

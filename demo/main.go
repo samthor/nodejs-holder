@@ -27,7 +27,7 @@ func main() {
 	log.Printf("runner started: %+v", runner)
 
 	tc, _ := context.WithTimeout(context.Background(), time.Second*1)
-	out, err := runner.Do(tc, njs.Request[any]{
+	err = runner.Do(tc, njs.Request{
 		Import: "./other.ts",
 	})
 	if err != nil {
@@ -35,6 +35,4 @@ func main() {
 	}
 
 	time.Sleep(time.Second * 10)
-
-	log.Printf("got out: %+v", out)
 }

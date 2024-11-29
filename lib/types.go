@@ -1,20 +1,39 @@
+// Package lib exports a helper that runs Node.js on your behalf to call functions.
+// Basically used to wrap up Node-specific code that needs to run within your Go server.
+
 package lib
 
 import (
 	"context"
 )
 
-// Request is made to a Node.JS runner.
-type Request[X any] struct {
-	Import string `json:"import,omitempty"`
+type RequestMethod struct {
+	// Import specifies the path that Node.js will call `import(...)` on.
+	Import string `json:"import"`
+
+	// Method is the method name used from the ESM import. If unspecified, uses `"default"`.
 	Method string `json:"method,omitempty"`
-	Args   []X    `json:"args,omitempty"`
+}
+
+// Request specifies the import/method to call.
+type Request struct {
+	// Import specifies the path that Node.js will call `import(...)` on.
+	Import string `json:"import"`
+
+	// Method is the method name used from the ESM import. If unspecified, uses `"default"`.
+	Method string `json:"method,omitempty"`
+
+	// Arg is the argument passed 1st to the function.
+	Arg any `json:"arg,omitempty"`
+
+	// Response has the resulting value placed inside it. It must be a pointer to something.
+	Response any `json:"-"`
 }
 
 // Host represents an active Node.js process.
 type Host interface {
 	// Do performs an operation on the running Node.js code.
-	Do(context.Context, Request[any]) (any, error)
+	Do(ctx context.Context, r Request) error
 
 	// Wait waits for the Node.js process to exit.
 	Wait() error

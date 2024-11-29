@@ -5,7 +5,7 @@ export type Request = {
   import: string;
   method?: string; // or 'default'
   cancel?: true;
-  args?: any[];
+  arg?: any;
 };
 
 export type Response = {
@@ -16,8 +16,6 @@ export type Response = {
 };
 
 process.title = 'nodejs-holder';
-
-const abortSignalSymbol = Symbol.for('nodejs-holder.signal');
 
 const r = new FdReader(3);
 const w = buildWriter(4);
@@ -61,14 +59,7 @@ async function runRequest(payload: Request, signal: AbortSignal) {
     const module = await import(payload.import);
     const method = module[payload.method ?? 'default'];
 
-    method[abortSignalSymbol] = signal;
-    Promise.resolve().then(() => {
-      if (method[abortSignalSymbol] === signal) {
-        delete method[abortSignalSymbol];
-      }
-    });
-
-    const res = await method(...(payload.args ?? []));
+    const res = await method(payload.arg, signal);
     const r: Response = {
       id: payload.id,
       status: 'ok',
