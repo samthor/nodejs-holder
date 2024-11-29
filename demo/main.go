@@ -8,6 +8,9 @@ import (
 	njs "github.com/samthor/nodejs-holder/lib"
 )
 
+type LocalType struct {
+}
+
 func main() {
 	runner, err := njs.New(context.Background(), &njs.Options{
 		Flags: njs.OptionsFlags{
