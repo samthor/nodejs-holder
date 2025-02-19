@@ -20,11 +20,11 @@ type internalRequest struct {
 	Id     string `json:"id"`
 }
 
-type internalResponse[Y any] struct {
-	Id        string `json:"id"`
-	Status    string `json:"status"`
-	Response  Y      `json:"res,omitempty"`
-	ErrorText string `json:"errtext,omitempty"`
+type internalResponse struct {
+	Id        string          `json:"id"`
+	Status    string          `json:"status"`
+	Response  json.RawMessage `json:"res,omitempty"`
+	ErrorText string          `json:"errtext,omitempty"`
 }
 
 // New starts a new Host that can execute Node.js code.
@@ -100,7 +100,7 @@ func New(ctx context.Context, options *Options) (Host, error) {
 		outerContext: ctx,
 		localRead:    localRead,
 		localWrite:   localWrite,
-		waiters:      map[int]chan<- internalResponse[any]{},
+		waiters:      map[int]chan<- internalResponse{},
 	}
 
 	// start reading stdin/stderr
@@ -113,7 +113,7 @@ func New(ctx context.Context, options *Options) (Host, error) {
 		for scan.Scan() {
 			line := scan.Bytes()
 
-			var res internalResponse[any]
+			var res internalResponse
 			err := json.Unmarshal(line, &res)
 			if err != nil {
 				// TODO: something else?
@@ -149,7 +149,7 @@ type nodeHost struct {
 	seq          int
 	localRead    io.Reader
 	localWrite   io.Writer
-	waiters      map[int]chan<- internalResponse[any]
+	waiters      map[int]chan<- internalResponse
 	proc         *os.Process
 }
 
@@ -163,7 +163,7 @@ func (nh *nodeHost) Stop() error {
 	})
 }
 
-func (nh *nodeHost) handleResponse(res *internalResponse[any]) {
+func (nh *nodeHost) handleResponse(res *internalResponse) {
 	seq, _ := strconv.Atoi(res.Id)
 
 	if seq <= 0 {
@@ -215,7 +215,7 @@ func (n *nodeHost) Do(ctx context.Context, req Request) error {
 		return err
 	}
 
-	ch := make(chan internalResponse[any], 1)
+	ch := make(chan internalResponse, 1)
 	n.waiters[seq] = ch
 	defer func() {
 		n.lock.Lock()
@@ -228,10 +228,9 @@ func (n *nodeHost) Do(ctx context.Context, req Request) error {
 	select {
 	case out := <-ch:
 		if out.Status == "ok" {
-			if !isTypeNil(req.Response) {
-				// TODO: lazy (we know this will work since it was JSON already)
-				b, _ := json.Marshal(out.Response)
-				return json.Unmarshal(b, req.Response)
+			// only decode if the output is not undefined and the _target_ is not nil
+			if len(out.Response) != 0 && !isTypeNil(req.Response) {
+				return json.Unmarshal(out.Response, req.Response)
 			}
 			return nil
 		}
