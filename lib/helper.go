@@ -7,8 +7,8 @@ import (
 // WriteTempJS writes code to disk so you can import it via Node.
 // It always generates a file with a ".js" extension.
 // Note that cleanup can be called immediately after Node has run once, as once Node imports a file once, it'll use its cache to `import` it again.
-func WriteTempJS(name, code string) (p string, cleanup func(), err error) {
-	return writeTemp(name, code, "js")
+func WriteTempJS(code string) (p string, cleanup func(), err error) {
+	return writeTemp("", code, "js")
 }
 
 func writeTemp(name, code, suffix string) (p string, cleanup func(), err error) {

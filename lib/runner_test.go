@@ -42,7 +42,7 @@ func TestHelper(t *testing.T) {
 		t.Fatalf("couldn't start runner: %v", err)
 	}
 
-	p, cleanup, err := lib.WriteTempJS("", "export function foo() { return 123; }")
+	p, cleanup, err := lib.WriteTempJS("export function foo() { return 123; }")
 	if err != nil {
 		t.Fatalf("couldn't write tmp file: %v", err)
 	}
