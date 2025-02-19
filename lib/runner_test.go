@@ -1,7 +1,6 @@
 package lib_test
 
 import (
-	"context"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -10,7 +9,7 @@ import (
 )
 
 func TestRunner(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	runner, err := lib.New(ctx, nil)
 	if err != nil {
@@ -35,8 +34,37 @@ func TestRunner(t *testing.T) {
 	}
 }
 
+func TestHelper(t *testing.T) {
+	ctx := t.Context()
+
+	runner, err := lib.New(ctx, nil)
+	if err != nil {
+		t.Fatalf("couldn't start runner: %v", err)
+	}
+
+	p, cleanup, err := lib.WriteTempJS("", "export function foo() { return 123; }")
+	if err != nil {
+		t.Fatalf("couldn't write tmp file: %v", err)
+	}
+	t.Cleanup(cleanup)
+
+	var out int
+	err = runner.Do(ctx, lib.Request{
+		Import:   p,
+		Method:   "foo",
+		Response: &out,
+	})
+	if err != nil {
+		t.Fatalf("couldn't run foo method: %v", err)
+	}
+
+	if out != 123 {
+		t.Errorf("unexpected output: %v", out)
+	}
+}
+
 func TestWrap(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	runner, err := lib.New(ctx, nil)
 	if err != nil {

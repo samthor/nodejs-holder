@@ -12,6 +12,9 @@ func WriteTempJS(name, code string) (p string, cleanup func(), err error) {
 }
 
 func writeTemp(name, code, suffix string) (p string, cleanup func(), err error) {
+	if name == "" {
+		name = "tmpjs"
+	}
 	f, err := os.CreateTemp(os.TempDir(), name+".*."+suffix)
 	if err != nil {
 		return "", nil, err
